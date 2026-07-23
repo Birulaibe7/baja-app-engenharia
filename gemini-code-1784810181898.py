@@ -279,7 +279,7 @@ with aba3:
             st.download_button("📥 Baixar Word Final", f, file_name=f"{raf_gerar}.docx")
 
     st.divider()
-   st.subheader("📊 Exportar Base de Dados (Excel Formatado)")
+    st.subheader("📊 Exportar Base de Dados (Excel Formatado)")
     st.info("Baixe a planilha pronta e formatada como tabela para o Dashboard.")
     
     buffer = io.BytesIO()
