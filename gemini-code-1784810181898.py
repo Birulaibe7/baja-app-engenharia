@@ -177,8 +177,7 @@ with aba1:
         
         submit = st.form_submit_button("Salvar no Banco de Dados", use_container_width=True)
 
-    if submit:
-        # Montar dicionário atualizado
+   if submit:
         nova_linha = dados_atuais.copy()
         nova_linha.update({
             "Status": status_novo, "Drive_Link": drive_link, "Componente": comp, 
@@ -189,13 +188,15 @@ with aba1:
         if raf_selecionado == "✨ Abrir NOVO Registro":
             df = pd.concat([df, pd.DataFrame([nova_linha])], ignore_index=True)
         else:
-            df.loc[df["ID"] == raf_selecionado] = pd.Series(nova_linha)
+            # Lógica blindada para atualizar apenas a linha correta sem apagar dados
+            idx_update = df[df["ID"] == raf_selecionado].index[0]
+            for coluna, valor in nova_linha.items():
+                df.at[idx_update, coluna] = valor
         
         salvar_dados(df)
         st.success("✅ Dados salvos com sucesso! A base principal foi atualizada.")
         st.rerun()
-
-# --- ABA 2: FILA DE USINAGEM ---
+# --- ABA 2: FILA DE USINAGEM E HISTÓRICO ---
 with aba2:
     st.subheader("🗜️ Fila de Produção / Manufatura")
     df = carregar_dados()
@@ -215,6 +216,19 @@ with aba2:
                     salvar_dados(df)
                     st.rerun()
 
+    st.divider()
+    st.subheader("🏁 Histórico de Peças Concluídas (Validadas)")
+    concluidos = df[df["Status"] == "🟢 Validado / Fechado"]
+    
+    if concluidos.empty:
+        st.info("Nenhuma RAF foi finalizada ainda.")
+    else:
+        # Mostra uma tabela limpa apenas com o resumo dos concluídos
+        st.dataframe(
+            concluidos[["ID", "Componente", "Area", "Responsavel", "Data_Ocorrencia"]], 
+            hide_index=True, 
+            use_container_width=True
+        )
 # --- ABA 3: GERADOR DE RELATÓRIOS E EXPORTAÇÃO ---
 with aba3:
     st.subheader("📄 Gerar Documento Final do RAF")
