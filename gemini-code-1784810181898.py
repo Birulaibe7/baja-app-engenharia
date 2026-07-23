@@ -3,9 +3,11 @@ import pandas as pd
 from datetime import datetime
 import os
 import tempfile
+import io
+import unicodedata
 from PIL import Image
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches
 from fpdf import FPDF
 
 # ==========================================
@@ -43,8 +45,18 @@ def processar_imagem_temp(uploaded_file):
         return None
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
         img = Image.open(uploaded_file)
+        if img.mode == 'RGBA':
+            img = img.convert('RGB')
         img.save(tmp.name)
         return tmp.name
+
+def limpar_texto_pdf(texto):
+    """Remove emojis e acentos pesados para o FPDF não dar crash"""
+    if not isinstance(texto, str):
+        return str(texto)
+    texto_sem_emoji = texto.replace("🔴 ", "").replace("🟡 ", "").replace("🔵 ", "").replace("🟢 ", "")
+    texto_limpo = unicodedata.normalize('NFKD', texto_sem_emoji).encode('ASCII', 'ignore').decode('ASCII')
+    return texto_limpo
 
 def gerar_word(dados, img_paths):
     doc = Document()
@@ -61,7 +73,7 @@ def gerar_word(dados, img_paths):
     doc.add_paragraph(f"Piloto: {dados['Piloto']} | Atividade: {dados['Atividade']}")
     doc.add_paragraph(f"Sintomas: {dados['Sintomas']}")
     if img_paths.get('quebra'):
-        doc.add_picture(img_paths['quebra'], width=Inches(2.5)) # Imagem de ~6cm
+        doc.add_picture(img_paths['quebra'], width=Inches(2.5)) 
 
     doc.add_heading("3. Análise da Causa Raiz", level=2)
     doc.add_paragraph(f"Inspeção Visual: {dados['Inspecao']}")
@@ -72,7 +84,7 @@ def gerar_word(dados, img_paths):
     doc.add_paragraph(f"Ação Escolhida: {dados['Acao']}")
     doc.add_paragraph(f"Modificações: {dados['Modificacoes']}")
     if img_paths.get('nova'):
-        doc.add_picture(img_paths['nova'], width=Inches(2.5)) # Imagem de ~6cm
+        doc.add_picture(img_paths['nova'], width=Inches(2.5)) 
     
     doc.add_paragraph(f"Resultado: {dados['Resultado']}")
     doc.add_paragraph(f"Parecer Final: {dados['Parecer']}")
@@ -85,14 +97,16 @@ def gerar_pdf(dados, img_paths):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, f"RAF - RELATÓRIO DE ANALISE DE FALHA ({dados['ID']})", ln=True, align='C')
+    
+    titulo = limpar_texto_pdf(f"RAF - RELATORIO DE ANALISE DE FALHA ({dados['ID']})")
+    pdf.cell(0, 10, titulo, ln=True, align='C')
     
     pdf.set_font("Arial", size=11)
     def add_linha(titulo, texto):
         pdf.set_font("Arial", 'B', 11)
-        pdf.cell(0, 8, f"{titulo}: ", ln=False)
+        pdf.cell(0, 8, limpar_texto_pdf(f"{titulo}: "), ln=False)
         pdf.set_font("Arial", '', 11)
-        pdf.multi_cell(0, 8, str(texto))
+        pdf.multi_cell(0, 8, limpar_texto_pdf(str(texto)))
 
     pdf.ln(5)
     add_linha("Status", dados['Status'])
@@ -105,7 +119,7 @@ def gerar_pdf(dados, img_paths):
     pdf.cell(0, 10, "2. O Fato", ln=True)
     add_linha("Contexto", dados['Contexto'])
     if img_paths.get('quebra'):
-        pdf.image(img_paths['quebra'], w=60) # Imagem de 60mm (6cm)
+        pdf.image(img_paths['quebra'], w=60)
         pdf.ln(2)
 
     pdf.ln(5)
@@ -150,7 +164,8 @@ with aba1:
         dados_atuais["Status"] = STATUS_LIST[0]
         st.success(f"Criando novo registro: **{novo_id}**")
 
-    with st.form("form_kanban"):
+    # O parâmetro clear_on_submit=True zera o formulário após salvar!
+    with st.form("form_kanban", clear_on_submit=True):
         col1, col2 = st.columns(2)
         status_idx = STATUS_LIST.index(dados_atuais["Status"]) if dados_atuais["Status"] in STATUS_LIST else 0
         
@@ -187,7 +202,6 @@ with aba1:
         if raf_selecionado == "✨ Abrir NOVO Registro":
             df = pd.concat([df, pd.DataFrame([nova_linha])], ignore_index=True)
         else:
-            # Lógica blindada para atualizar apenas a linha correta sem apagar dados
             idx_update = df[df["ID"] == raf_selecionado].index[0]
             for coluna, valor in nova_linha.items():
                 df.at[idx_update, coluna] = valor
@@ -223,12 +237,12 @@ with aba2:
     if concluidos.empty:
         st.info("Nenhuma RAF foi finalizada ainda.")
     else:
-        # Mostra uma tabela limpa apenas com o resumo dos concluídos
         st.dataframe(
             concluidos[["ID", "Componente", "Area", "Responsavel", "Data_Ocorrencia"]], 
             hide_index=True, 
             use_container_width=True
         )
+
 # --- ABA 3: GERADOR DE RELATÓRIOS E EXPORTAÇÃO ---
 with aba3:
     st.subheader("📄 Gerar Documento Final do RAF")
@@ -237,8 +251,8 @@ with aba3:
     raf_gerar = st.selectbox("Escolha o RAF para gerar documento:", df["ID"].tolist())
     
     col_img1, col_img2 = st.columns(2)
-    foto_quebra = col_img1.file_uploader("Foto da Quebra", type=["jpg", "png"])
-    foto_nova = col_img2.file_uploader("Foto da Nova Peça", type=["jpg", "png"])
+    foto_quebra = col_img1.file_uploader("Foto da Quebra", type=["jpg", "png", "jpeg"])
+    foto_nova = col_img2.file_uploader("Foto da Nova Peça", type=["jpg", "png", "jpeg"])
     
     col_btn1, col_btn2 = st.columns(2)
     if col_btn1.button("📄 Gerar PDF"):
@@ -256,7 +270,15 @@ with aba3:
             st.download_button("📥 Baixar Word Final", f, file_name=f"{raf_gerar}.docx")
 
     st.divider()
-    st.subheader("📊 Exportar Base de Dados para Dashboard (Power BI, Looker, etc.)")
-    st.info("Baixe a base leve e atualizada para alimentar seu software de gráficos.")
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(label="📥 Baixar Base (CSV)", data=csv, file_name="base_dashboard_baja.csv", mime="text/csv")
+    st.subheader("📊 Exportar Base de Dados para Dashboard (Excel BR)")
+    st.info("Baixe a base leve e otimizada para o padrão brasileiro.")
+    
+    # Exportação Padrão Brasil (Separador ; e encoding utf-8-sig para ler emojis no Excel)
+    csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+    
+    st.download_button(
+        label="📥 Baixar Base (Formato BR)",
+        data=csv,
+        file_name="base_dashboard_baja.csv",
+        mime="text/csv"
+    )
