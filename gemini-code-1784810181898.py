@@ -140,7 +140,6 @@ with aba1:
     opcoes_raf = ["✨ Abrir NOVO Registro"] + df["ID"].tolist()
     raf_selecionado = st.selectbox("Selecione a Ação:", opcoes_raf)
 
-    # Preparar dados pré-preenchidos se for edição
     if raf_selecionado != "✨ Abrir NOVO Registro":
         dados_atuais = df[df["ID"] == raf_selecionado].iloc[0].to_dict()
         st.info(f"Editando o registro: **{raf_selecionado}**")
@@ -177,7 +176,7 @@ with aba1:
         
         submit = st.form_submit_button("Salvar no Banco de Dados", use_container_width=True)
 
-   if submit:
+    if submit:
         nova_linha = dados_atuais.copy()
         nova_linha.update({
             "Status": status_novo, "Drive_Link": drive_link, "Componente": comp, 
@@ -196,6 +195,7 @@ with aba1:
         salvar_dados(df)
         st.success("✅ Dados salvos com sucesso! A base principal foi atualizada.")
         st.rerun()
+
 # --- ABA 2: FILA DE USINAGEM E HISTÓRICO ---
 with aba2:
     st.subheader("🗜️ Fila de Produção / Manufatura")
