@@ -191,11 +191,11 @@ with aba1:
         st.subheader("3. Solução e Validação")
         acao = st.text_area("Ação Técnica Escolhida & Justificativa", value=str(dados_atuais["Acao"]))
         mods = st.text_area("Modificações de Material/Usinagem", value=str(dados_atuais["Modificacoes"]))
-        resultado = st.text_area("Resultado dos Testes de Campo", value=str(dados_atuais["Resultado"]))
         
-        parecer_opcoes = ["", "APROVADO PARA COMPETIÇÃO", "REPROVADO - NECESSITA REVISÃO", "EM ANÁLISE"]
-        parecer_idx = parecer_opcoes.index(dados_atuais["Parecer"]) if dados_atuais["Parecer"] in parecer_opcoes else 0
-        parecer = st.selectbox("Parecer Final", parecer_opcoes, index=parecer_idx)
+        # Mantemos apenas um campo descritivo e de status final consolidado
+        parecer_opcoes = ["Em Aberto / Em Teste", "APROVADO PARA COMPETIÇÃO", "REPROVADO - NECESSITA REVISÃO"]
+        parecer_atual = dados_atuais["Parecer"] if dados_atuais["Parecer"] in parecer_opcoes else parecer_opcoes[0]
+        resultado = st.selectbox("Parecer e Resultado dos Testes de Campo", parecer_opcoes, index=parecer_opcoes.index(parecer_atual))
         
         st.info("💡 As fotos devem ser anexadas na Aba 3 na hora de gerar o Relatório Final em Word.")
         submit = st.form_submit_button("Salvar no Banco de Dados", use_container_width=True)
@@ -208,7 +208,7 @@ with aba1:
             "Piloto": piloto, "Atividade": atividade, "Sintomas": sintomas,
             "Contexto": contexto, "Inspecao": insp, 
             "Porque1": pq1, "Porque2": pq2, "Porque3": pq3, "Porque4": pq4, "Porque5": pq5,
-            "Acao": acao, "Modificacoes": mods, "Resultado": resultado, "Parecer": parecer
+            "Acao": acao, "Modificacoes": mods, "Resultado": resultado, "Parecer": resultado
         })
 
         if raf_selecionado == "✨ Abrir NOVO Registro":
