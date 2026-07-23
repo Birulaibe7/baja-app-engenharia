@@ -144,9 +144,26 @@ with aba1:
     opcoes_raf = ["✨ Abrir NOVO Registro"] + df["ID"].tolist()
     raf_selecionado = st.selectbox("Selecione a Ação:", opcoes_raf)
 
-    if raf_selecionado != "✨ Abrir NOVO Registro":
+        if raf_selecionado != "✨ Abrir NOVO Registro":
         dados_atuais = df[df["ID"] == raf_selecionado].iloc[0].to_dict()
         st.info(f"Editando o registro: **{raf_selecionado}**")
+        
+        # --- BOTÃO DE EXCLUIR COM TRAVA DE SEGURANÇA ---
+        with st.expander("🗑️ Zona de Perigo (Excluir este Registro)"):
+            confirmar = st.checkbox("Marque aqui para habilitar a exclusão", key=f"chk_{raf_selecionado}")
+            if confirmar:
+                if st.button("🔴 Apagar RAF Permanentemente", key=f"btn_del_{raf_selecionado}", use_container_width=True):
+                    df = df[df["ID"] != raf_selecionado]
+                    salvar_dados(df)
+                    st.success(f"Registro {raf_selecionado} excluído com sucesso!")
+                    st.rerun()
+        # ---------------------------------------------
+    else:
+        novo_id = f"RAF-{datetime.now().year}-{str(len(df)+1).zfill(3)}"
+        dados_atuais = {col: "" for col in COLUNAS}
+        dados_atuais["ID"] = novo_id
+        dados_atuais["Status"] = STATUS_LIST[0]
+        st.success(f"Criando novo registro: **{novo_id}**")
     else:
         novo_id = f"RAF-{datetime.now().year}-{str(len(df)+1).zfill(3)}"
         dados_atuais = {col: "" for col in COLUNAS}
