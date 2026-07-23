@@ -132,7 +132,7 @@ def gerar_word(dados, img_paths):
 # ==========================================
 st.title("⚙️ Central de Engenharia & Oficina - Baja")
 
-aba1, aba2, aba3 = st.tabs(["📝 Kanban (Lançar/Editar RAF)", "🗜️ Fila de Usinagem", "🗂️ Exportar e Relatórios"])
+aba1, aba2, aba3, aba4 = st.tabs(["📝 Kanban", "🗜️ Fila de Usinagem", "🗂️ Exportar e Relatórios", "📊 Dashboard e Métricas"])
 
 # --- ABA 1: KANBAN E EDIÇÃO CONTÍNUA ---
 with aba1:
@@ -319,3 +319,50 @@ with aba3:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
+# --- ABA 4: DASHBOARD E MÉTRICAS DE CONFIABILIDADE ---
+with aba4:
+    st.subheader("📊 Painel de Confiabilidade e Métricas (Design Report)")
+    st.info("Indicadores em tempo real para a defesa técnica e relatórios de engenharia.")
+    
+    df = carregar_dados()
+    
+    if df.empty or len(df) == 0:
+        st.warning("Nenhum registro encontrado na base de dados para gerar métricas.")
+    else:
+        # Cartões de Resumo (KPIs)
+        total_falhas = len(df)
+        concluidas = len(df[df["Status"] == "🟢 Validado / Fechado"])
+        pendentes = total_falhas - concluidas
+        
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric("Total de Falhas Registradas", total_falhas)
+        kpi2.metric("Solucionadas & Validadas", concluidas)
+        kpi3.metric("Pendentes / Em Andamento", pendentes)
+        
+        st.divider()
+        
+        # Gráficos de Análise (Pareto / Distribuição)
+        col_g1, col_g2 = st.columns(2)
+        
+        with col_g1:
+            st.markdown("### 📈 Concentração de Falhas por Área")
+            if "Area" in df.columns:
+                conTAGem_area = df["Area"].replace("", "Não Especificado").value_counts()
+                st.bar_chart(conTAGem_area)
+            else:
+                st.text("Coluna 'Area' não encontrada.")
+                
+        with col_g2:
+            st.markdown("### ⚙️ Status Atual da Fila de Engenharia")
+            if "Status" in df.columns:
+                contagem_status = df["Status"].value_counts()
+                st.bar_chart(contagem_status)
+            else:
+                st.text("Coluna 'Status' não encontrada.")
+        
+        st.divider()
+        st.markdown("### 📋 Resumo Analítico por Componente")
+        if "Componente" in df.columns:
+            # Tabela resumida para visualização rápida no box
+            resumo_comp = df[["ID", "Componente", "Area", "Responsavel", "Status"]].copy()
+            st.dataframe(resumo_comp, hide_index=True, use_container_width=True)
