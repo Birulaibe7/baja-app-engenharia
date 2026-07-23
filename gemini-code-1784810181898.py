@@ -137,6 +137,8 @@ aba1, aba2, aba3 = st.tabs(["📝 Kanban (Lançar/Editar RAF)", "🗜️ Fila de
 # --- ABA 1: KANBAN E EDIÇÃO CONTÍNUA ---
 with aba1:
     df = carregar_dados()
+    df.fillna("", inplace=True) # Garante que células vazias do Excel não virem "nan" na tela
+    
     opcoes_raf = ["✨ Abrir NOVO Registro"] + df["ID"].tolist()
     raf_selecionado = st.selectbox("Selecione a Ação:", opcoes_raf)
 
@@ -159,22 +161,41 @@ with aba1:
         drive_link = col2.text_input("🔗 Link da Pasta no Drive (CAD 3D/2D)", value=str(dados_atuais["Drive_Link"]))
         
         st.divider()
-        st.subheader("Dados da Ocorrência")
+        st.subheader("1. Identificação e Ocorrência")
         c1, c2, c3 = st.columns(3)
         comp = c1.text_input("Componente", value=str(dados_atuais["Componente"]))
         area = c2.selectbox("Área", ["Suspensão", "Powertrain", "Chassi", "Freios", "Elétrica"], index=0)
         data = c3.date_input("Data da Ocorrência")
-        resp = st.text_input("Responsável Técnico", value=str(dados_atuais["Responsavel"]))
-        contexto = st.text_area("Contexto da Quebra", value=str(dados_atuais["Contexto"]))
+        
+        c4, c5, c6 = st.columns(3)
+        resp = c4.text_input("Responsável Técnico", value=str(dados_atuais["Responsavel"]))
+        piloto = c5.text_input("Piloto / Operador", value=str(dados_atuais["Piloto"]))
+        atividade = c6.selectbox("Tipo de Atividade", ["Treino/Oficina", "Competição", "Teste Dinâmico"], index=0)
+        
+        contexto = st.text_area("Contexto Detalhado da Quebra", value=str(dados_atuais["Contexto"]))
+        sintomas = st.text_area("Sintomas da Falha", value=str(dados_atuais["Sintomas"]))
         
         st.divider()
-        st.subheader("Análise e Solução")
-        insp = st.text_input("Inspeção Macro", value=str(dados_atuais["Inspecao"]))
-        pq5 = st.text_input("Causa Raiz (5º Porquê)", value=str(dados_atuais["Porque5"]))
-        acao = st.text_area("Ação Escolhida / Solução", value=str(dados_atuais["Acao"]))
+        st.subheader("2. Análise da Causa Raiz (Os 5 Porquês)")
+        insp = st.text_input("Inspeção Macroscópica da Superfície", value=str(dados_atuais["Inspecao"]))
         
-        st.info("💡 Como o banco é leve, as fotos devem ser enviadas apenas na Aba 3 na hora de gerar o PDF final.")
+        pq1 = st.text_input("1. Por que falhou mecanicamente?", value=str(dados_atuais["Porque1"]))
+        pq2 = st.text_input("2. Por que ocorreu essa condição?", value=str(dados_atuais["Porque2"]))
+        pq3 = st.text_input("3. Por que o esforço agiu assim?", value=str(dados_atuais["Porque3"]))
+        pq4 = st.text_input("4. Por que o projeto não mitigou?", value=str(dados_atuais["Porque4"]))
+        pq5 = st.text_input("5. Por que não foi previsto? (Causa Raiz)", value=str(dados_atuais["Porque5"]))
         
+        st.divider()
+        st.subheader("3. Solução e Validação")
+        acao = st.text_area("Ação Técnica Escolhida & Justificativa", value=str(dados_atuais["Acao"]))
+        mods = st.text_area("Modificações de Material/Usinagem", value=str(dados_atuais["Modificacoes"]))
+        resultado = st.text_area("Resultado dos Testes de Campo", value=str(dados_atuais["Resultado"]))
+        
+        parecer_opcoes = ["", "APROVADO PARA COMPETIÇÃO", "REPROVADO - NECESSITA REVISÃO", "EM ANÁLISE"]
+        parecer_idx = parecer_opcoes.index(dados_atuais["Parecer"]) if dados_atuais["Parecer"] in parecer_opcoes else 0
+        parecer = st.selectbox("Parecer Final", parecer_opcoes, index=parecer_idx)
+        
+        st.info("💡 As fotos devem ser anexadas na Aba 3 na hora de gerar o Relatório Final em Word.")
         submit = st.form_submit_button("Salvar no Banco de Dados", use_container_width=True)
 
     if submit:
@@ -182,7 +203,10 @@ with aba1:
         nova_linha.update({
             "Status": status_novo, "Drive_Link": drive_link, "Componente": comp, 
             "Area": area, "Data_Ocorrencia": data.strftime("%d/%m/%Y"), "Responsavel": resp, 
-            "Contexto": contexto, "Inspecao": insp, "Porque5": pq5, "Acao": acao
+            "Piloto": piloto, "Atividade": atividade, "Sintomas": sintomas,
+            "Contexto": contexto, "Inspecao": insp, 
+            "Porque1": pq1, "Porque2": pq2, "Porque3": pq3, "Porque4": pq4, "Porque5": pq5,
+            "Acao": acao, "Modificacoes": mods, "Resultado": resultado, "Parecer": parecer
         })
 
         if raf_selecionado == "✨ Abrir NOVO Registro":
@@ -195,7 +219,6 @@ with aba1:
         salvar_dados(df)
         st.success("✅ Dados salvos com sucesso! A base principal foi atualizada.")
         st.rerun()
-
 # --- ABA 2: FILA DE USINAGEM E HISTÓRICO ---
 with aba2:
     st.subheader("🗜️ Fila de Produção / Manufatura")
