@@ -137,7 +137,9 @@ aba1, aba2, aba3 = st.tabs(["📝 Kanban (Lançar/Editar RAF)", "🗜️ Fila de
 # --- ABA 1: KANBAN E EDIÇÃO CONTÍNUA ---
 with aba1:
     df = carregar_dados()
-    df.fillna("", inplace=True) # Garante que células vazias do Excel não virem "nan" na tela
+    # Converte tudo para texto de forma segura para o Pandas não dar chilique
+    df = df.fillna("").astype(str)
+    df = df.replace("nan", "")
     
     opcoes_raf = ["✨ Abrir NOVO Registro"] + df["ID"].tolist()
     raf_selecionado = st.selectbox("Selecione a Ação:", opcoes_raf)
