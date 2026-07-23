@@ -5,6 +5,8 @@ import os
 import tempfile
 import io
 import unicodedata
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from PIL import Image
 from docx import Document
 from docx.shared import Inches
@@ -103,10 +105,17 @@ def gerar_pdf(dados, img_paths):
     
     pdf.set_font("Arial", size=11)
     def add_linha(titulo, texto):
+        titulo_limpo = limpar_texto_pdf(f"{titulo}: ")
+        texto_limpo = limpar_texto_pdf(str(texto))
+        
         pdf.set_font("Arial", 'B', 11)
-        pdf.cell(0, 8, limpar_texto_pdf(f"{titulo}: "), ln=False)
+        # Calcula a largura exata do título para não roubar a linha toda
+        largura_titulo = pdf.get_string_width(titulo_limpo) + 2
+        pdf.cell(largura_titulo, 8, titulo_limpo, ln=False)
+        
         pdf.set_font("Arial", '', 11)
-        pdf.multi_cell(0, 8, limpar_texto_pdf(str(texto)))
+        # O texto ocupa o resto e quebra a linha sozinho
+        pdf.multi_cell(0, 8, texto_limpo)
 
     pdf.ln(5)
     add_linha("Status", dados['Status'])
@@ -270,15 +279,41 @@ with aba3:
             st.download_button("📥 Baixar Word Final", f, file_name=f"{raf_gerar}.docx")
 
     st.divider()
-    st.subheader("📊 Exportar Base de Dados para Dashboard (Excel BR)")
-    st.info("Baixe a base leve e otimizada para o padrão brasileiro.")
+   st.subheader("📊 Exportar Base de Dados (Excel Formatado)")
+    st.info("Baixe a planilha pronta e formatada como tabela para o Dashboard.")
     
-    # Exportação Padrão Brasil (Separador ; e encoding utf-8-sig para ler emojis no Excel)
-    csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-    
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Base_Dashboard')
+        worksheet = writer.sheets['Base_Dashboard']
+        
+        # 1. Formatando Cabeçalho (Azul padrão com letra branca)
+        header_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True)
+        
+        for col_num, column_title in enumerate(df.columns, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            
+            # 2. Ajustando a largura das colunas
+            col_letter = get_column_letter(col_num)
+            if column_title in ["Contexto", "Sintomas", "Inspecao", "Acao", "Porque1", "Porque2", "Porque3", "Porque4", "Porque5"]:
+                worksheet.column_dimensions[col_letter].width = 45 # Colunas largas para os textos
+            elif column_title in ["ID", "Data_Ocorrencia", "Status", "Responsavel", "Area"]:
+                worksheet.column_dimensions[col_letter].width = 22
+            else:
+                worksheet.column_dimensions[col_letter].width = 18
+
+        # 3. Formatando as células de dados (Quebra de texto e alinhamento no topo)
+        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=1, max_col=worksheet.max_column):
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+
     st.download_button(
-        label="📥 Baixar Base (Formato BR)",
-        data=csv,
-        file_name="base_dashboard_baja.csv",
-        mime="text/csv"
+        label="📥 Baixar Planilha Formatada (.xlsx)",
+        data=buffer.getvalue(),
+        file_name="base_dashboard_baja.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
