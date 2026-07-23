@@ -1,319 +1,248 @@
-import tempfile
-import logging
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, Any, Optional
-
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+from datetime import datetime
+import os
+import tempfile
 from PIL import Image
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
-from streamlit.runtime.uploaded_file_manager import UploadedFile
+from fpdf import FPDF
 
 # ==========================================
-# CONFIGURAÇÕES E CONSTANTES
+# CONFIGURAÇÕES DA PÁGINA E BANCO DE DADOS
 # ==========================================
-class Config:
-    DATA_DIR = Path("data")
-    EXCEL_FALHAS = DATA_DIR / "historico_falhas_baja.xlsx"
-    EXCEL_CHECKLISTS = DATA_DIR / "historico_checklists.xlsx"
-    
-    AREAS = [
-        "Suspensão e Direção", "Design e Estrutura", "Elétrica e Eletrônica",
-        "Powertrain", "Freios", "Gestão", "Marketing", "Geral"
-    ]
-    ATIVIDADES = ["Treino/Oficina", "Validação de Projeto", "Competição"]
+st.set_page_config(page_title="Central de Engenharia - Baja", page_icon="⚙️", layout="wide")
 
-# Configuração de Logs
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+EXCEL_FALHAS = "historico_baja.xlsx"
+STATUS_LIST = ["🔴 Ocorrência Registrada", "🟡 Em Análise", "🔵 Fila de Usinagem", "🟢 Validado / Fechado"]
+COLUNAS = [
+    "ID", "Status", "Data_Ocorrencia", "Componente", "Area", "Responsavel", 
+    "Contexto", "Piloto", "Atividade", "Sintomas", "Inspecao", "Drive_Link", 
+    "Porque1", "Porque2", "Porque3", "Porque4", "Porque5", 
+    "Acao", "Modificacoes", "Resultado", "Parecer"
+]
 
-# ==========================================
-# CAMADA DE DADOS (MODEL)
-# ==========================================
-def init_database() -> None:
-    """Garante que o diretório de dados e os arquivos Excel existam."""
-    Config.DATA_DIR.mkdir(exist_ok=True)
-    
-    if not Config.EXCEL_FALHAS.exists():
-        df_falhas = pd.DataFrame(columns=[
-            "Codigo", "Data_Ocorrencia", "Data_Fechamento", "Responsavel", "Area",
-            "Componente", "CAD_Software", "Contexto", "Piloto", "Tipo_Atividade",
-            "Sintomas", "Inspecao_Visual", "Porque1", "Porque2", "Porque3", "Porque4", "Porque5",
-            "Acao_Tecnica", "Modificacoes", "Nova_Versao_CAD", "Resultado_Teste", "Parecer_Final"
-        ])
-        df_falhas.to_excel(Config.EXCEL_FALHAS, index=False)
-        
-    if not Config.EXCEL_CHECKLISTS.exists():
-        df_check = pd.DataFrame(columns=[
-            "Data_Hora", "Tipo_Inspecao", "Responsavel", "Status_Final", "Itens_Nok"
-        ])
-        df_check.to_excel(Config.EXCEL_CHECKLISTS, index=False)
+def inicializar_bd():
+    if not os.path.exists(EXCEL_FALHAS):
+        df = pd.DataFrame(columns=COLUNAS)
+        df.to_excel(EXCEL_FALHAS, index=False)
 
-def save_to_excel(file_path: Path, new_data: Dict[str, Any]) -> None:
-    """Salva um novo registro em um arquivo Excel existente de forma segura."""
-    try:
-        df_existente = pd.read_excel(file_path)
-        df_novo = pd.concat([df_existente, pd.DataFrame([new_data])], ignore_index=True)
-        df_novo.to_excel(file_path, index=False)
-    except Exception as e:
-        logging.error(f"Erro ao salvar no Excel {file_path}: {e}")
-        st.error("Erro interno ao acessar o banco de dados. Contate a engenharia de software.")
+inicializar_bd()
+
+def carregar_dados():
+    return pd.read_excel(EXCEL_FALHAS)
+
+def salvar_dados(df):
+    df.to_excel(EXCEL_FALHAS, index=False)
 
 # ==========================================
-# CAMADA DE SERVIÇOS (WORD GENERATION)
+# FUNÇÕES DE GERADORES DE RELATÓRIO
 # ==========================================
-def _add_image_to_doc(doc: Document, image_file: UploadedFile, label: str) -> None:
-    """Processa e adiciona uma imagem ao documento usando arquivos temporários."""
-    if not image_file:
-        return
-        
-    doc.add_paragraph(label)
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-            img = Image.open(image_file)
-            img.save(tmp.name)
-            doc.add_picture(tmp.name, width=Inches(5))
-        Path(tmp.name).unlink() # Deleta após o uso
-    except Exception as e:
-        logging.error(f"Erro ao processar imagem {label}: {e}")
-        doc.add_paragraph("[Erro ao carregar a imagem anexa]")
+def processar_imagem_temp(uploaded_file):
+    if uploaded_file is None:
+        return None
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+        img = Image.open(uploaded_file)
+        img.save(tmp.name)
+        return tmp.name
 
-def generate_word_report(dados: Dict[str, Any], img_quebra: Optional[UploadedFile], 
-                         img_cad: Optional[UploadedFile], img_depois: Optional[UploadedFile]) -> Path:
-    """Gera o documento Word formatado e retorna o caminho do arquivo temporário."""
+def gerar_word(dados, img_paths):
     doc = Document()
+    doc.add_heading(f"RAF - RELATÓRIO DE ANÁLISE DE FALHA ({dados['ID']})", level=1)
     
-    # Estilos de Cabeçalho
-    p_title = doc.add_paragraph()
-    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_title = p_title.add_run("RAF - RELATÓRIO DE ANÁLISE DE FALHA")
-    run_title.font.name = 'Arial'
-    run_title.font.size = Pt(18)
-    run_title.font.bold = True
-    run_title.font.color.rgb = RGBColor(0x1A, 0x36, 0x5D)
-    
-    # 1. Identificação (Tabela)
-    doc.add_heading('1. Identificação do Sistema', level=2)
-    t1 = doc.add_table(rows=3, cols=2)
-    t1.style = 'Table Grid'
-    t1.alignment = WD_TABLE_ALIGNMENT.CENTER
-    
-    t1.rows[0].cells[0].text = f"Código: {dados.get('Codigo', '')}"
-    t1.rows[0].cells[1].text = f"Data: {dados.get('Data_Ocorrencia', '')}"
-    t1.rows[1].cells[0].text = f"Responsável: {dados.get('Responsavel', '')}"
-    t1.rows[1].cells[1].text = f"Área: {dados.get('Area', '')}"
-    t1.rows[2].cells[0].text = f"Componente: {dados.get('Componente', '')}"
-    t1.rows[2].cells[1].text = f"CAD: {dados.get('CAD_Software', '')}"
+    doc.add_heading("1. Identificação", level=2)
+    doc.add_paragraph(f"Status Atual: {dados['Status']}")
+    doc.add_paragraph(f"Componente: {dados['Componente']} | Área: {dados['Area']}")
+    doc.add_paragraph(f"Data: {dados['Data_Ocorrencia']} | Responsável: {dados['Responsavel']}")
+    doc.add_paragraph(f"Link CAD (Drive): {dados['Drive_Link']}")
 
-    # 2. Fato e Sintomas
-    doc.add_heading('2. Registro do Fato', level=2)
-    doc.add_paragraph(f"Contexto: {dados.get('Contexto', '')}")
-    doc.add_paragraph(f"Piloto: {dados.get('Piloto', '')} | Atividade: {dados.get('Tipo_Atividade', '')}")
-    doc.add_paragraph(f"Sintomas: {dados.get('Sintomas', '')}")
-    _add_image_to_doc(doc, img_quebra, "Evidência Visual da Falha (No veículo):")
+    doc.add_heading("2. Registro do Fato", level=2)
+    doc.add_paragraph(f"Contexto: {dados['Contexto']}")
+    doc.add_paragraph(f"Piloto: {dados['Piloto']} | Atividade: {dados['Atividade']}")
+    doc.add_paragraph(f"Sintomas: {dados['Sintomas']}")
+    if img_paths.get('quebra'):
+        doc.add_picture(img_paths['quebra'], width=Inches(2.5)) # Imagem de ~6cm
 
-    # 3. Análise (5 Porquês)
-    doc.add_heading('3. Análise Técnica e Causa Raiz', level=2)
-    doc.add_paragraph(f"Inspeção Macroscópica: {dados.get('Inspecao_Visual', '')}")
-    _add_image_to_doc(doc, img_cad, "Análise Geométrica / Concentradores de Tensão:")
-    
-    doc.add_heading('Método dos 5 Porquês:', level=3)
+    doc.add_heading("3. Análise da Causa Raiz", level=2)
+    doc.add_paragraph(f"Inspeção Visual: {dados['Inspecao']}")
     for i in range(1, 6):
-        doc.add_paragraph(f"{i}. {dados.get(f'Porque{i}', '')}")
+        doc.add_paragraph(f"{i}. {dados[f'Porque{i}']}")
 
-    # 4. Solução
-    doc.add_heading('4. Solução Implementada e Validação', level=2)
-    doc.add_paragraph(f"Ação Escolhida: {dados.get('Acao_Tecnica', '')}")
-    doc.add_paragraph(f"Modificações: {dados.get('Modificacoes', '')}")
-    _add_image_to_doc(doc, img_depois, "Componente Final / Modificado:")
-    doc.add_paragraph(f"Resultado do Teste: {dados.get('Resultado_Teste', '')}")
+    doc.add_heading("4. Solução e Validação", level=2)
+    doc.add_paragraph(f"Ação Escolhida: {dados['Acao']}")
+    doc.add_paragraph(f"Modificações: {dados['Modificacoes']}")
+    if img_paths.get('nova'):
+        doc.add_picture(img_paths['nova'], width=Inches(2.5)) # Imagem de ~6cm
     
-    p_final = doc.add_paragraph()
-    run_final = p_final.add_run(f"PARECER FINAL: {dados.get('Parecer_Final', '')}")
-    run_final.font.bold = True
+    doc.add_paragraph(f"Resultado: {dados['Resultado']}")
+    doc.add_paragraph(f"Parecer Final: {dados['Parecer']}")
 
-    # Salva em um arquivo temporário seguro
-    tmp_path = Path(tempfile.gettempdir()) / f"RAF_{dados.get('Codigo', '000')}.docx"
+    tmp_path = tempfile.mktemp(suffix=".docx")
     doc.save(tmp_path)
     return tmp_path
 
+def gerar_pdf(dados, img_paths):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, f"RAF - RELATÓRIO DE ANALISE DE FALHA ({dados['ID']})", ln=True, align='C')
+    
+    pdf.set_font("Arial", size=11)
+    def add_linha(titulo, texto):
+        pdf.set_font("Arial", 'B', 11)
+        pdf.cell(0, 8, f"{titulo}: ", ln=False)
+        pdf.set_font("Arial", '', 11)
+        pdf.multi_cell(0, 8, str(texto))
+
+    pdf.ln(5)
+    add_linha("Status", dados['Status'])
+    add_linha("Componente", dados['Componente'])
+    add_linha("Data", dados['Data_Ocorrencia'])
+    add_linha("Link CAD", dados['Drive_Link'])
+    
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "2. O Fato", ln=True)
+    add_linha("Contexto", dados['Contexto'])
+    if img_paths.get('quebra'):
+        pdf.image(img_paths['quebra'], w=60) # Imagem de 60mm (6cm)
+        pdf.ln(2)
+
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "3. Analise de Causa Raiz", ln=True)
+    add_linha("Inspecao Visual", dados['Inspecao'])
+    add_linha("Causa Raiz", dados['Porque5'])
+
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "4. Solucao", ln=True)
+    add_linha("Acao", dados['Acao'])
+    if img_paths.get('nova'):
+        pdf.image(img_paths['nova'], w=60)
+        pdf.ln(2)
+    add_linha("Parecer Final", dados['Parecer'])
+
+    tmp_path = tempfile.mktemp(suffix=".pdf")
+    pdf.output(tmp_path)
+    return tmp_path
+
 # ==========================================
-# CAMADA DE INTERFACE (VIEW)
+# INTERFACE DO USUÁRIO (ABAS)
 # ==========================================
-def render_tab_raf() -> None:
-    st.header("Registro de Análise de Falha (RAF)")
-    
-    with st.form("form_raf", clear_on_submit=False):
-        col1, col2, col3 = st.columns(3)
-        codigo = col1.text_input("Código do Relatório", "RAF-2026-001")
-        responsavel = col1.text_input("Responsável Técnico")
-        data_ocorr = col2.date_input("Data da Ocorrência")
-        area = col2.selectbox("Área Responsável", Config.AREAS)
-        componente = col3.text_input("Componente Específico")
-        cad_sw = col3.text_input("Software CAD Usado", "SolidWorks")
+st.title("⚙️ Central de Engenharia & Oficina - Baja")
 
-        st.subheader("2. O Fato e Sintomas")
-        contexto = st.text_area("Contexto Detalhado da Quebra")
-        col_f1, col_f2 = st.columns(2)
-        piloto = col_f1.text_input("Piloto / Operador")
-        sintomas = col_f1.text_input("Sintomas da Falha")
-        tipo_atv = col_f2.selectbox("Tipo de Atividade", Config.ATIVIDADES)
-        foto_quebra = col_f2.file_uploader("Foto da Peça Quebrada", type=["png", "jpg", "jpeg"])
+aba1, aba2, aba3 = st.tabs(["📝 Kanban (Lançar/Editar RAF)", "🗜️ Fila de Usinagem", "🗂️ Exportar e Relatórios"])
 
-        st.subheader("3. Análise da Causa Raiz (5 Porquês)")
-        inspecao = st.text_area("Inspeção Macroscópica da Superfície")
-        foto_cad = st.file_uploader("Print da Região Crítica no CAD", type=["png", "jpg", "jpeg"])
-        
-        p1 = st.text_input("1. Por que falhou mecanicamente?")
-        p2 = st.text_input("2. Por que ocorreu essa condição?")
-        p3 = st.text_input("3. Por que o esforço agiu assim?")
-        p4 = st.text_input("4. Por que o projeto não mitigou?")
-        p5 = st.text_input("5. Por que não foi previsto? (Causa Raiz)")
+# --- ABA 1: KANBAN E EDIÇÃO CONTÍNUA ---
+with aba1:
+    df = carregar_dados()
+    opcoes_raf = ["✨ Abrir NOVO Registro"] + df["ID"].tolist()
+    raf_selecionado = st.selectbox("Selecione a Ação:", opcoes_raf)
 
-        st.subheader("4. Solução Final & Validação")
-        acao_final = st.text_area("Ação Técnica Escolhida & Justificativa")
-        modificacoes = st.text_input("Modificações de Material/Usinagem")
-        nova_v_cad = st.text_input("Nome/Versão do Novo Arquivo CAD")
-        foto_depois = st.file_uploader("Foto da Nova Peça", type=["png", "jpg", "jpeg"])
-        resultado_teste = st.text_area("Resultado dos Testes de Campo")
-        parecer = st.radio("Parecer Final", ["APROVADO PARA COMPETIÇÃO", "REJEITADO"])
+    # Preparar dados pré-preenchidos se for edição
+    if raf_selecionado != "✨ Abrir NOVO Registro":
+        dados_atuais = df[df["ID"] == raf_selecionado].iloc[0].to_dict()
+        st.info(f"Editando o registro: **{raf_selecionado}**")
+    else:
+        novo_id = f"RAF-{datetime.now().year}-{str(len(df)+1).zfill(3)}"
+        dados_atuais = {col: "" for col in COLUNAS}
+        dados_atuais["ID"] = novo_id
+        dados_atuais["Status"] = STATUS_LIST[0]
+        st.success(f"Criando novo registro: **{novo_id}**")
 
-        submit = st.form_submit_button("🚀 Gerar Relatório e Salvar", use_container_width=True)
-
-    if submit:
-        if not codigo or not componente:
-            st.warning("⚠️ Código e Componente são campos obrigatórios.")
-            return
-
-        dados_dict = {
-            "Codigo": codigo, "Data_Ocorrencia": str(data_ocorr), 
-            "Data_Fechamento": str(datetime.now().date()), "Responsavel": responsavel, 
-            "Area": area, "Componente": componente, "CAD_Software": cad_sw,
-            "Contexto": contexto, "Piloto": piloto, "Tipo_Atividade": tipo_atv, 
-            "Sintomas": sintomas, "Inspecao_Visual": inspecao, "Porque1": p1, 
-            "Porque2": p2, "Porque3": p3, "Porque4": p4, "Porque5": p5,
-            "Acao_Tecnica": acao_final, "Modificacoes": modificacoes, 
-            "Nova_Versao_CAD": nova_v_cad, "Resultado_Teste": resultado_teste, 
-            "Parecer_Final": parecer
-        }
-        
-        with st.spinner("Processando dados e gerando documento..."):
-            save_to_excel(Config.EXCEL_FALHAS, dados_dict)
-            arq_word_path = generate_word_report(dados_dict, foto_quebra, foto_cad, foto_depois)
-        
-        st.success(f"✅ Falha {codigo} registrada com sucesso!")
-        
-        with open(arq_word_path, "rb") as file:
-            st.download_button(
-                label=f"📥 Baixar Documento Oficial ({arq_word_path.name})",
-                data=file,
-                file_name=arq_word_path.name,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                type="primary"
-            )
-
-def render_tab_dashboard() -> None:
-    st.header("📊 Dashboard de Confiabilidade")
-    try:
-        df_f = pd.read_excel(Config.EXCEL_FALHAS)
-    except Exception:
-        st.error("Erro ao ler banco de dados de falhas.")
-        return
-
-    if df_f.empty:
-        st.info("Nenhuma falha cadastrada para gerar métricas.")
-        return
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total de Falhas", len(df_f))
-    area_mode = df_f["Area"].mode()[0] if not df_f["Area"].empty else "N/A"
-    m2.metric("Sub-sistema Crítico", area_mode)
-    
-    taxa_aprov = (len(df_f[df_f["Parecer_Final"] == "APROVADO PARA COMPETIÇÃO"]) / len(df_f)) * 100
-    m3.metric("Taxa de Aprovação", f"{taxa_aprov:.1f}%")
-
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        fig_area = px.bar(df_f, x="Area", title="Ocorrências por Sub-sistema", color="Area")
-        st.plotly_chart(fig_area, use_container_width=True)
-    with col_g2:
-        fig_atv = px.pie(df_f, names="Tipo_Atividade", title="Falhas por Atividade", hole=0.4)
-        st.plotly_chart(fig_atv, use_container_width=True)
-
-def render_tab_search() -> None:
-    st.header("🔍 Busca de Histórico (Base de Conhecimento)")
-    termo = st.text_input("Digite uma palavra-chave (Ex: trinca, manga, 4340):")
-    
-    if termo:
-        try:
-            df_f = pd.read_excel(Config.EXCEL_FALHAS)
-            mask = (
-                df_f["Componente"].astype(str).str.contains(termo, case=False, na=False) |
-                df_f["Contexto"].astype(str).str.contains(termo, case=False, na=False) |
-                df_f["Acao_Tecnica"].astype(str).str.contains(termo, case=False, na=False)
-            )
-            resultados = df_f[mask]
-            
-            st.caption(f"Encontrados {len(resultados)} registro(s).")
-            for _, row in resultados.iterrows():
-                with st.expander(f"📌 {row['Codigo']} - {row['Componente']} ({row['Area']})"):
-                    st.markdown(f"**Contexto:** {row['Contexto']}")
-                    st.markdown(f"**Causa Raiz:** {row['Porque5']}")
-                    st.markdown(f"**Solução:** {row['Acao_Tecnica']}")
-        except Exception:
-            st.error("Erro ao realizar a busca.")
-
-def render_tab_checklist() -> None:
-    st.header("📋 Checklist de Pista")
-    with st.form("form_checklist"):
+    with st.form("form_kanban"):
         col1, col2 = st.columns(2)
-        c_resp = col1.text_input("Responsável")
-        c_tipo = col2.selectbox("Sessão", Config.ATIVIDADES)
+        status_idx = STATUS_LIST.index(dados_atuais["Status"]) if dados_atuais["Status"] in STATUS_LIST else 0
+        
+        status_novo = col1.selectbox("Status do RAF (Kanban)", STATUS_LIST, index=status_idx)
+        drive_link = col2.text_input("🔗 Link da Pasta no Drive (CAD 3D/2D)", value=str(dados_atuais["Drive_Link"]))
         
         st.divider()
-        chk = [
-            st.checkbox("Cinto de segurança e fixações Ok"),
-            st.checkbox("Pressão do freio sem vazamentos"),
-            st.checkbox("Torque dos parafusos de suspensão e roda"),
-            st.checkbox("Nível de fluidos (Óleo/Freio)"),
-            st.checkbox("Chave geral (Kill-switch) funcional")
-        ]
+        st.subheader("Dados da Ocorrência")
+        c1, c2, c3 = st.columns(3)
+        comp = c1.text_input("Componente", value=str(dados_atuais["Componente"]))
+        area = c2.selectbox("Área", ["Suspensão", "Powertrain", "Chassi", "Freios", "Elétrica"], index=0)
+        data = c3.date_input("Data da Ocorrência")
+        resp = st.text_input("Responsável Técnico", value=str(dados_atuais["Responsavel"]))
+        contexto = st.text_area("Contexto da Quebra", value=str(dados_atuais["Contexto"]))
         
-        if st.form_submit_button("Finalizar Vistoria", use_container_width=True):
-            status = "LIBERADO PARA PISTA" if all(chk) else "RETER NO BOX"
-            novo_c = {
-                "Data_Hora": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                "Tipo_Inspecao": c_tipo,
-                "Responsavel": c_resp,
-                "Status_Final": status,
-                "Itens_Nok": len(chk) - sum(chk)
-            }
-            save_to_excel(Config.EXCEL_CHECKLISTS, novo_c)
+        st.divider()
+        st.subheader("Análise e Solução")
+        insp = st.text_input("Inspeção Macro", value=str(dados_atuais["Inspecao"]))
+        pq5 = st.text_input("Causa Raiz (5º Porquê)", value=str(dados_atuais["Porque5"]))
+        acao = st.text_area("Ação Escolhida / Solução", value=str(dados_atuais["Acao"]))
+        
+        st.info("💡 Como o banco é leve, as fotos devem ser enviadas apenas na Aba 3 na hora de gerar o PDF final.")
+        
+        submit = st.form_submit_button("Salvar no Banco de Dados", use_container_width=True)
+
+    if submit:
+        # Montar dicionário atualizado
+        nova_linha = dados_atuais.copy()
+        nova_linha.update({
+            "Status": status_novo, "Drive_Link": drive_link, "Componente": comp, 
+            "Area": area, "Data_Ocorrencia": data.strftime("%d/%m/%Y"), "Responsavel": resp, 
+            "Contexto": contexto, "Inspecao": insp, "Porque5": pq5, "Acao": acao
+        })
+
+        if raf_selecionado == "✨ Abrir NOVO Registro":
+            df = pd.concat([df, pd.DataFrame([nova_linha])], ignore_index=True)
+        else:
+            df.loc[df["ID"] == raf_selecionado] = pd.Series(nova_linha)
+        
+        salvar_dados(df)
+        st.success("✅ Dados salvos com sucesso! A base principal foi atualizada.")
+        st.rerun()
+
+# --- ABA 2: FILA DE USINAGEM ---
+with aba2:
+    st.subheader("🗜️ Fila de Produção / Manufatura")
+    df = carregar_dados()
+    fila = df[df["Status"] == "🔵 Fila de Usinagem"]
+    
+    if fila.empty:
+        st.success("A fila de usinagem está vazia! Nenhuma peça pendente.")
+    else:
+        for idx, row in fila.iterrows():
+            with st.expander(f"🛠️ {row['Componente']} (RAF: {row['ID']})"):
+                st.write(f"**Área:** {row['Area']} | **Responsável:** {row['Responsavel']}")
+                st.write(f"**O que fazer (Ação):** {row['Acao']}")
+                st.markdown(f"🔗 [Acessar Desenho no Google Drive]({row['Drive_Link']})")
+                
+                if st.button(f"✅ Marcar '{row['Componente']}' como Validado/Usinado", key=f"btn_{idx}"):
+                    df.at[idx, "Status"] = "🟢 Validado / Fechado"
+                    salvar_dados(df)
+                    st.rerun()
+
+# --- ABA 3: GERADOR DE RELATÓRIOS E EXPORTAÇÃO ---
+with aba3:
+    st.subheader("📄 Gerar Documento Final do RAF")
+    df = carregar_dados()
+    
+    raf_gerar = st.selectbox("Escolha o RAF para gerar documento:", df["ID"].tolist())
+    
+    col_img1, col_img2 = st.columns(2)
+    foto_quebra = col_img1.file_uploader("Foto da Quebra", type=["jpg", "png"])
+    foto_nova = col_img2.file_uploader("Foto da Nova Peça", type=["jpg", "png"])
+    
+    col_btn1, col_btn2 = st.columns(2)
+    if col_btn1.button("📄 Gerar PDF"):
+        dados = df[df["ID"] == raf_gerar].iloc[0].to_dict()
+        paths = {'quebra': processar_imagem_temp(foto_quebra), 'nova': processar_imagem_temp(foto_nova)}
+        pdf_path = gerar_pdf(dados, paths)
+        with open(pdf_path, "rb") as f:
+            st.download_button("📥 Baixar PDF Final", f, file_name=f"{raf_gerar}.pdf", mime="application/pdf")
             
-            if status == "LIBERADO PARA PISTA":
-                st.success("🟢 CARRO LIBERADO!")
-                st.balloons()
-            else:
-                st.error("🔴 CARRO RETIDO! Verifique pendências.")
+    if col_btn2.button("📝 Gerar Word (.docx)"):
+        dados = df[df["ID"] == raf_gerar].iloc[0].to_dict()
+        paths = {'quebra': processar_imagem_temp(foto_quebra), 'nova': processar_imagem_temp(foto_nova)}
+        word_path = gerar_word(dados, paths)
+        with open(word_path, "rb") as f:
+            st.download_button("📥 Baixar Word Final", f, file_name=f"{raf_gerar}.docx")
 
-# ==========================================
-# EXECUÇÃO PRINCIPAL
-# ==========================================
-def main() -> None:
-    st.set_page_config(page_title="Central de Engenharia - Baja SAE", page_icon="🏎️", layout="wide")
-    init_database()
-    
-    st.title("🏎️ Central de Engenharia & Oficina - Baja")
-    tabs = st.tabs(["📝 Registrar RAF", "📊 Dashboard", "🔍 Base de Conhecimento", "📋 Checklist"])
-    
-    with tabs[0]: render_tab_raf()
-    with tabs[1]: render_tab_dashboard()
-    with tabs[2]: render_tab_search()
-    with tabs[3]: render_tab_checklist()
-
-if __name__ == "__main__":
-    main()
+    st.divider()
+    st.subheader("📊 Exportar Base de Dados para Dashboard (Power BI, Looker, etc.)")
+    st.info("Baixe a base leve e atualizada para alimentar seu software de gráficos.")
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(label="📥 Baixar Base (CSV)", data=csv, file_name="base_dashboard_baja.csv", mime="text/csv")
