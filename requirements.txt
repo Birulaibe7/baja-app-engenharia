@@ -3,4 +3,4 @@ python-docx
 pandas
 openpyxl
 Pillow
-plotly
+fpdf2
