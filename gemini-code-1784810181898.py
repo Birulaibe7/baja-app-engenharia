@@ -4,13 +4,12 @@ from datetime import datetime
 import os
 import tempfile
 import io
-import unicodedata
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
 from PIL import Image
 from docx import Document
 from docx.shared import Inches
-from fpdf import FPDF
+from openpyxl.styles import Alignment
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA E BANCO DE DADOS
@@ -94,28 +93,6 @@ def gerar_word(dados, img_paths):
     tmp_path = tempfile.mktemp(suffix=".docx")
     doc.save(tmp_path)
     return tmp_path
-
-def gerar_pdf(dados, img_paths):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    
-    titulo = limpar_texto_pdf(f"RAF - RELATORIO DE ANALISE DE FALHA ({dados['ID']})")
-    pdf.cell(0, 10, titulo, ln=True, align='C')
-    
-    pdf.set_font("Arial", size=11)
-    def add_linha(titulo, texto):
-        titulo_limpo = limpar_texto_pdf(f"{titulo}: ")
-        texto_limpo = limpar_texto_pdf(str(texto))
-        
-        pdf.set_font("Arial", 'B', 11)
-        # Calcula a largura exata do título para não roubar a linha toda
-        largura_titulo = pdf.get_string_width(titulo_limpo) + 2
-        pdf.cell(largura_titulo, 8, titulo_limpo, ln=False)
-        
-        pdf.set_font("Arial", '', 11)
-        # O texto ocupa o resto e quebra a linha sozinho
-        pdf.multi_cell(0, 8, texto_limpo)
 
     pdf.ln(5)
     add_linha("Status", dados['Status'])
@@ -263,57 +240,57 @@ with aba3:
     foto_quebra = col_img1.file_uploader("Foto da Quebra", type=["jpg", "png", "jpeg"])
     foto_nova = col_img2.file_uploader("Foto da Nova Peça", type=["jpg", "png", "jpeg"])
     
-    col_btn1, col_btn2 = st.columns(2)
-    if col_btn1.button("📄 Gerar PDF"):
-        dados = df[df["ID"] == raf_gerar].iloc[0].to_dict()
-        paths = {'quebra': processar_imagem_temp(foto_quebra), 'nova': processar_imagem_temp(foto_nova)}
-        pdf_path = gerar_pdf(dados, paths)
-        with open(pdf_path, "rb") as f:
-            st.download_button("📥 Baixar PDF Final", f, file_name=f"{raf_gerar}.pdf", mime="application/pdf")
-            
-    if col_btn2.button("📝 Gerar Word (.docx)"):
+    if st.button("📝 Gerar Relatório (Word .docx)", use_container_width=True):
         dados = df[df["ID"] == raf_gerar].iloc[0].to_dict()
         paths = {'quebra': processar_imagem_temp(foto_quebra), 'nova': processar_imagem_temp(foto_nova)}
         word_path = gerar_word(dados, paths)
         with open(word_path, "rb") as f:
-            st.download_button("📥 Baixar Word Final", f, file_name=f"{raf_gerar}.docx")
+            st.download_button("📥 Baixar Relatório Word Pronto", f, file_name=f"{raf_gerar}.docx", use_container_width=True)
 
     st.divider()
-    st.subheader("📊 Exportar Base de Dados (Excel Formatado)")
-    st.info("Baixe a planilha pronta e formatada como tabela para o Dashboard.")
+    st.subheader("📊 Exportar Base de Dados (Tabela Dinâmica)")
+    st.info("Baixe a planilha oficial. Ela já vem formatada com filtros para você ordenar, buscar e analisar as quebras.")
     
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Base_Dashboard')
         worksheet = writer.sheets['Base_Dashboard']
         
-        # 1. Formatando Cabeçalho (Azul padrão com letra branca)
-        header_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
+        # 1. Definindo o tamanho total da nossa base de dados
+        max_row = worksheet.max_row
+        max_col = worksheet.max_column
+        col_letter = get_column_letter(max_col)
+        tabela_range = f"A1:{col_letter}{max_row}"
         
+        # 2. Criando o objeto "Tabela" oficial do Excel
+        tabela = Table(displayName="HistoricoFalhas", ref=tabela_range)
+        
+        # 3. Aplicando um estilo padrão bonitão do Excel (estilo azul com listras e filtros ativos)
+        estilo = TableStyleInfo(
+            name="TableStyleMedium9", showFirstColumn=False,
+            showLastColumn=False, showRowStripes=True, showColumnStripes=False
+        )
+        tabela.tableStyleInfo = estilo
+        worksheet.add_table(tabela)
+        
+        # 4. Ajustando a largura das colunas e ativando a quebra de texto
         for col_num, column_title in enumerate(df.columns, 1):
-            cell = worksheet.cell(row=1, column=col_num)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            
-            # 2. Ajustando a largura das colunas
-            col_letter = get_column_letter(col_num)
+            col_let = get_column_letter(col_num)
             if column_title in ["Contexto", "Sintomas", "Inspecao", "Acao", "Porque1", "Porque2", "Porque3", "Porque4", "Porque5"]:
-                worksheet.column_dimensions[col_letter].width = 45 # Colunas largas para os textos
+                worksheet.column_dimensions[col_let].width = 45 
             elif column_title in ["ID", "Data_Ocorrencia", "Status", "Responsavel", "Area"]:
-                worksheet.column_dimensions[col_letter].width = 22
+                worksheet.column_dimensions[col_let].width = 22
             else:
-                worksheet.column_dimensions[col_letter].width = 18
+                worksheet.column_dimensions[col_let].width = 18
 
-        # 3. Formatando as células de dados (Quebra de texto e alinhamento no topo)
-        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=1, max_col=worksheet.max_column):
+        for row in worksheet.iter_rows(min_row=2, max_row=max_row, min_col=1, max_col=max_col):
             for cell in row:
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
 
     st.download_button(
-        label="📥 Baixar Planilha Formatada (.xlsx)",
+        label="📥 Baixar Planilha Interativa (.xlsx)",
         data=buffer.getvalue(),
         file_name="base_dashboard_baja.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
     )
