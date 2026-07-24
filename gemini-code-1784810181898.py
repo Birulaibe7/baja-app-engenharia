@@ -10,13 +10,14 @@ from docx.shared import Inches
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA E BANCO DE DADOS
 # ==========================================
 st.set_page_config(page_title="Central de Engenharia - Baja", page_icon="⚙️", layout="wide")
 
-EXCEL_FALHAS = "historico_baja.xlsx"
 STATUS_LIST = ["🔴 Ocorrência Registrada", "🟡 Em Análise", "🔵 Fila de Usinagem", "🟢 Validado / Fechado"]
 COLUNAS = [
     "ID", "Status", "Data_Ocorrencia", "Componente", "Area", "Responsavel", 
@@ -24,19 +25,76 @@ COLUNAS = [
     "Porque1", "Porque2", "Porque3", "Porque4", "Porque5", 
     "Acao", "Modificacoes", "Resultado", "Parecer"
 ]
+# --- CONFIGURAÇÕES DO GOOGLE SHEETS ---
+SCOPES = ["https://www.spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+NOME_PLANILHA = "Base_Baja_RAF" # O nome exato que está no seu Google Drive
+
+@st.cache_resource(ttl=600) 
+def conectar_gsheets():
+    try:
+        if "gcp_service_account" not in st.secrets:
+            st.error("🚨 Segredos não encontrados no Streamlit Cloud.")
+            return None
+        
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        
+        return client.open(NOME_PLANILHA).sheet1
+    except Exception as e:
+        st.error(f"🚨 FALHA DE CONEXÃO COM A NUVEM: {e}")
+        return None
 
 def inicializar_bd():
-    if not os.path.exists(EXCEL_FALHAS):
-        df = pd.DataFrame(columns=COLUNAS)
-        df.to_excel(EXCEL_FALHAS, index=False)
+    sheet = conectar_gsheets()
+    if sheet is None: return
+    
+    try:
+        dados = sheet.get_all_records()
+        if not dados:
+            sheet.update([COLUNAS])
+    except Exception as e:
+        st.error(f"🚨 Erro ao iniciar a planilha: {e}")
 
+# Inicia a conexão quando o app abre
 inicializar_bd()
 
 def carregar_dados():
-    return pd.read_excel(EXCEL_FALHAS)
+    df_vazio = pd.DataFrame(columns=COLUNAS)
+    sheet = conectar_gsheets()
+    
+    if sheet is None: 
+        return df_vazio
+        
+    try:
+        dados = sheet.get_all_records()
+        if not dados:
+            return df_vazio
+            
+        df = pd.DataFrame(dados)
+        
+        for col in COLUNAS:
+            if col not in df.columns:
+                df[col] = ""
+        return df
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao baixar dados da nuvem: {e}")
+        return df_vazio
 
 def salvar_dados(df):
-    df.to_excel(EXCEL_FALHAS, index=False)
+    sheet = conectar_gsheets()
+    if sheet is None:
+        st.error("🚨 Sem conexão com o servidor. Tente novamente.")
+        return False
+        
+    try:
+        df_limpo = df.copy().fillna("").astype(str)
+        sheet.clear()
+        sheet.update([df_limpo.columns.values.tolist()] + df_limpo.values.tolist())
+        return True
+    except Exception as e:
+        st.error(f"🚨 ERRO DE GRAVAÇÃO: {e}")
+        return False
 
 # ==========================================
 # FUNÇÕES DE GERADORES DE RELATÓRIO
