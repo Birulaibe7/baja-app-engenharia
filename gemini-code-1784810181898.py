@@ -202,7 +202,7 @@ with aba1:
     opcoes_raf = ["✨ Abrir NOVO Registro"] + df["ID"].tolist()
     raf_selecionado = st.selectbox("Selecione a Ação:", opcoes_raf)
 
-        if raf_selecionado != "✨ Abrir NOVO Registro":
+    if raf_selecionado != "✨ Abrir NOVO Registro":
         dados_atuais = df[df["ID"] == raf_selecionado].iloc[0].to_dict()
         st.info(f"Editando o registro: **{raf_selecionado}**")
         
