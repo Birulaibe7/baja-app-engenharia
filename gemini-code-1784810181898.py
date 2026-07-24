@@ -10,8 +10,9 @@ from docx.shared import Inches
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
+import streamlit as st
+import pandas as pd
 import gspread
-from google.oauth2.service_account import Credentials
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA E BANCO DE DADOS
@@ -26,8 +27,7 @@ COLUNAS = [
     "Acao", "Modificacoes", "Resultado", "Parecer"
 ]
 # --- CONFIGURAÇÕES DO GOOGLE SHEETS ---
-SCOPES = ["https://www.spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-NOME_PLANILHA = "Base_Baja_RAF" # O nome exato que está no seu Google Drive
+NOME_PLANILHA = "Base_Baja_RAF" 
 
 @st.cache_resource(ttl=600) 
 def conectar_gsheets():
@@ -36,11 +36,15 @@ def conectar_gsheets():
             st.error("🚨 Segredos não encontrados no Streamlit Cloud.")
             return None
         
+        # Pega o cofre de senhas do Streamlit
         creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        client = gspread.authorize(creds)
         
+        # Usa a função NATIVA do gspread (muito mais segura contra bugs de token)
+        client = gspread.service_account_from_dict(creds_dict)
+        
+        # Abre a planilha
         return client.open(NOME_PLANILHA).sheet1
+        
     except Exception as e:
         st.error(f"🚨 FALHA DE CONEXÃO COM A NUVEM: {e}")
         return None
