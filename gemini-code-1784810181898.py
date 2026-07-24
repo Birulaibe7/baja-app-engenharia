@@ -93,8 +93,17 @@ def salvar_dados(df):
         
     try:
         df_limpo = df.copy().fillna("").astype(str)
-        sheet.clear()
-        sheet.update([df_limpo.columns.values.tolist()] + df_limpo.values.tolist())
+        
+        # Prepara a matriz de dados que vai subir para a nuvem
+        dados_para_salvar = [df_limpo.columns.values.tolist()] + df_limpo.values.tolist()
+        
+        # ATUALIZAÇÃO CIRÚRGICA: Limpa APENAS o texto das colunas A até U
+        # Isso garante que cores, filtros e formatação continuem intactos!
+        sheet.batch_clear(["A:U"])
+        
+        # Cola os dados novos a partir da célula A1
+        sheet.update(values=dados_para_salvar, range_name="A1")
+        
         return True
     except Exception as e:
         st.error(f"🚨 ERRO DE GRAVAÇÃO: {e}")
