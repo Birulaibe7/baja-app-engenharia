@@ -222,12 +222,6 @@ with aba1:
         dados_atuais["ID"] = novo_id
         dados_atuais["Status"] = STATUS_LIST[0]
         st.success(f"Criando novo registro: **{novo_id}**")
-    else:
-        novo_id = f"RAF-{datetime.now().year}-{str(len(df)+1).zfill(3)}"
-        dados_atuais = {col: "" for col in COLUNAS}
-        dados_atuais["ID"] = novo_id
-        dados_atuais["Status"] = STATUS_LIST[0]
-        st.success(f"Criando novo registro: **{novo_id}**")
 
     # O parâmetro clear_on_submit=True zera o formulário após salvar!
     with st.form("form_kanban", clear_on_submit=True):
