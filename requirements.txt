@@ -4,3 +4,5 @@ pandas
 openpyxl
 Pillow
 fpdf2
+gspread
+google-auth
