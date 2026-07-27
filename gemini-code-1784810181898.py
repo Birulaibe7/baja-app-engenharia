@@ -338,37 +338,35 @@ with aba1:
         st.rerun()
 # --- ABA 2: FILA DE USINAGEM E HISTÓRICO ---
 with aba2:
-    st.subheader("🗜️ Fila de Produção / Manufatura")
-    df = carregar_dados()
-    fila = df[df["Status"] == "🔵 Fila de Usinagem"]
-    
-    if fila.empty:
-        st.success("A fila de usinagem está vazia! Nenhuma peça pendente.")
-    else:
-        for idx, row in fila.iterrows():
-            with st.expander(f"🛠️ {row['Componente']} (RAF: {row['ID']})"):
-                st.write(f"**Área:** {row['Area']} | **Responsável:** {row['Responsavel']}")
-                st.write(f"**O que fazer (Ação):** {row['Acao']}")
-                st.markdown(f"🔗 [Acessar Desenho no Google Drive]({row['Drive_Link']})")
-                
-                if st.button(f"✅ Marcar '{row['Componente']}' como Validado/Usinado", key=f"btn_{idx}"):
-                    df.at[idx, "Status"] = "🟢 Validado / Fechado"
-                    salvar_dados(df)
-                    st.rerun()
-
-    st.divider()
-    st.subheader("🏁 Histórico de Peças Concluídas (Validadas)")
-    concluidos = df[df["Status"] == "🟢 Validado / Fechado"]
-    
-    if concluidos.empty:
-        st.info("Nenhuma RAF foi finalizada ainda.")
-    else:
-        st.dataframe(
-            concluidos[["ID", "Componente", "Area", "Responsavel", "Data_Ocorrencia"]], 
-            hide_index=True, 
-            use_container_width=True
-        )
-
+        st.subheader("🗜️ Fila de Produção / Manufatura")
+        
+        # Filtra os dados puxando EXATAMENTE o nome do novo status
+        fila_usinagem = df[df["Status"] == "⚙️ Fila de Fabricação/Compra"]
+        
+        if fila_usinagem.empty:
+            st.success("Tudo em dia! Nenhuma peça pendente para fabricação ou compra.")
+        else:
+            # Já adicionei as colunas novas para vocês verem o fornecedor direto nessa tela!
+            st.dataframe(
+                fila_usinagem[["ID", "Componente", "Area", "Responsavel", "Tipo_Obtencao", "Fornecedor", "Previsao_Entrega"]], 
+                hide_index=True, 
+                use_container_width=True
+            )
+            
+        st.divider()
+        st.subheader("🏁 Histórico de Peças Concluídas (Validadas)")
+        
+        # Atualizando para o novo nome do status de concluído também
+        concluidos = df[df["Status"] == "🟢 Validado / Fechado"]
+        
+        if concluidos.empty:
+            st.info("Nenhum RAF foi finalizado ainda.")
+        else:
+            st.dataframe(
+                concluidos[["ID", "Componente", "Area", "Responsavel", "Data_Ocorrencia"]], 
+                hide_index=True, 
+                use_container_width=True
+            )
 
 # --- ABA 3: GERADOR DE RELATÓRIOS E EXPORTAÇÃO ---
 with aba3:
