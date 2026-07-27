@@ -254,7 +254,7 @@ with aba1:
         st.subheader("1. Identificação e Ocorrência")
         c1, c2, c3 = st.columns(3)
         comp = c1.text_input("Componente", value=str(dados_atuais["Componente"]))
-        area = c2.selectbox("Área", ["Suspensão", "Powertrain", "Chassi", "Freios", "Elétrica"], index=0)
+        area = c2.selectbox("Área", ["Suspensão e Direção", "Powertrain", "Chassi", "Freios", "Elétrica"], index=0)
         data = c3.date_input("Data da Ocorrência")
         
         c4, c5, c6 = st.columns(3)
