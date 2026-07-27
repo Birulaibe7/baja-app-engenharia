@@ -19,12 +19,17 @@ import gspread
 # ==========================================
 st.set_page_config(page_title="Central de Engenharia - Baja", page_icon="⚙️", layout="wide")
 
-STATUS_LIST = ["🔴 Ocorrência Registrada", "🟡 Em Análise", "🔵 Fila de Usinagem", "🟢 Validado / Fechado"]
-COLUNAS = [
+STATUS_LIST = [
+    "🔴 Ocorrência Registrada", 
+    "🟡 Em Análise", 
+    "⚙️ Fila de Fabricação/Compra", 
+    "⏳ Aguardando Entrega/Usinagem", 
+    "🟢 Validado / Fechado"
+]
     "ID", "Status", "Data_Ocorrencia", "Componente", "Area", "Responsavel", 
     "Contexto", "Piloto", "Atividade", "Sintomas", "Inspecao", "Drive_Link", 
     "Porque1", "Porque2", "Porque3", "Porque4", "Porque5", 
-    "Acao", "Modificacoes", "Resultado", "Parecer"
+    "Acao", "Modificacoes", "Resultado", "Parecer", "Tipo_Obtencao", "Fornecedor", "Previsao_Entrega"
 ]
 # --- CONFIGURAÇÕES DO GOOGLE SHEETS ---
 NOME_PLANILHA = "Base_Baja_RAF" 
@@ -93,16 +98,17 @@ def salvar_dados(df):
         
     try:
         df_limpo = df.copy().fillna("").astype(str)
-        
-        # Prepara a matriz de dados que vai subir para a nuvem
         dados_para_salvar = [df_limpo.columns.values.tolist()] + df_limpo.values.tolist()
         
-        # ATUALIZAÇÃO CIRÚRGICA: Limpa APENAS o texto das colunas A até U
-        # Isso garante que cores, filtros e formatação continuem intactos!
-        sheet.batch_clear(["A:U"])
+        # Conta exatamente quantas linhas o robô precisa atualizar
+        total_linhas = len(dados_para_salvar)
         
-        # Cola os dados novos a partir da célula A1
-        sheet.update(values=dados_para_salvar, range_name="A1")
+        # 1. Atualiza cirurgicamente até a coluna X (A Tabela Nativa AMA isso)
+        sheet.update(values=dados_para_salvar, range_name=f"A1:X{total_linhas}")
+        
+        # 2. Apaga apenas os "fantasmas" abaixo da tabela (caso alguém delete algo)
+        linha_limpeza = total_linhas + 1
+        sheet.batch_clear([f"A{linha_limpeza}:X"])
         
         return True
     except Exception as e:
@@ -273,6 +279,30 @@ with aba1:
         st.subheader("3. Solução e Validação")
         acao = st.text_area("Ação Técnica Escolhida & Justificativa", value=str(dados_atuais["Acao"]))
         mods = st.text_area("Modificações de Material/Usinagem", value=str(dados_atuais["Modificacoes"]))
+        # --------------------------------------------------------------------
+        # INÍCIO DO BLOCO DE COMPRAS (PEDAÇO 1)
+        # --------------------------------------------------------------------
+        st.divider()
+        st.subheader("4. Manufatura e Compras")
+        import datetime 
+        
+        col_compra1, col_compra2, col_compra3 = st.columns(3)
+        with col_compra1:
+            opcoes_obtencao = ["Não se aplica", "Usinagem Interna (Oficina)", "Usinagem Externa", "Compra Pronta", "Patrocínio"]
+            # Puxa o valor do banco de dados (se houver)
+            valor_salvo_obtencao = str(dados_atuais.get("Tipo_Obtencao", "Não se aplica"))
+            if valor_salvo_obtencao not in opcoes_obtencao:
+                valor_salvo_obtencao = "Não se aplica"
+            
+            novo_tipo_obt = st.selectbox("Tipo de Obtenção", opcoes_obtencao, index=opcoes_obtencao.index(valor_salvo_obtencao))
+            
+        with col_compra2:
+            novo_fornecedor = st.text_input("Fornecedor / Torneiro", value=str(dados_atuais.get("Fornecedor", "")))
+            
+        with col_compra3:
+            nova_previsao = st.date_input("📅 Previsão de Entrega", format="DD/MM/YYYY")
+            nova_previsao_str = nova_previsao.strftime("%d/%m/%Y")
+        # --------------------------------------------------------------------
         
         # Mantemos apenas um campo descritivo e de status final consolidado
         parecer_opcoes = ["Em Aberto / Em Teste", "APROVADO PARA COMPETIÇÃO", "REPROVADO - NECESSITA REVISÃO"]
@@ -290,7 +320,9 @@ with aba1:
             "Piloto": piloto, "Atividade": atividade, "Sintomas": sintomas,
             "Contexto": contexto, "Inspecao": insp, 
             "Porque1": pq1, "Porque2": pq2, "Porque3": pq3, "Porque4": pq4, "Porque5": pq5,
-            "Acao": acao, "Modificacoes": mods, "Resultado": resultado, "Parecer": resultado
+            "Acao": acao, "Modificacoes": mods, "Resultado": resultado, "Parecer": resultado, "Tipo_Obtencao": novo_tipo_obt,
+            "Fornecedor": novo_fornecedor,
+            "Previsao_Entrega": nova_previsao_str
         })
 
         if raf_selecionado == "✨ Abrir NOVO Registro":
@@ -335,6 +367,7 @@ with aba2:
             hide_index=True, 
             use_container_width=True
         )
+
 
 # --- ABA 3: GERADOR DE RELATÓRIOS E EXPORTAÇÃO ---
 with aba3:
