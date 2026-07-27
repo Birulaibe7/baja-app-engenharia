@@ -361,12 +361,19 @@ with aba2:
         if concluidos.empty:
             st.info("Nenhum RAF foi finalizado ainda.")
         else:
+          # Tabela turbinada com quebra de texto e larguras ajustadas
             st.dataframe(
-                concluidos[["ID", "Componente", "Area", "Responsavel", "Data_Ocorrencia"]], 
+                fila_usinagem[["ID", "Componente", "Area", "Responsavel", "Tipo_Obtencao", "Fornecedor", "Previsao_Entrega"]], 
                 hide_index=True, 
-                use_container_width=True
+                use_container_width=True,
+                column_config={
+                    "Responsavel": st.column_config.TextColumn("Responsável", width="medium"),
+                    "Area": st.column_config.TextColumn("Área", width="medium"),
+                    "Componente": st.column_config.TextColumn("Componente", width="medium"),
+                    "Tipo_Obtencao": st.column_config.TextColumn("Obtenção", width="small"),
+                    "Previsao_Entrega": st.column_config.TextColumn("Previsão", width="small")
+                }
             )
-
 # --- ABA 3: GERADOR DE RELATÓRIOS E EXPORTAÇÃO ---
 with aba3:
     st.subheader("📄 Gerar Documento Final do RAF")
