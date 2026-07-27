@@ -22,8 +22,7 @@ st.set_page_config(page_title="Central de Engenharia - Baja", page_icon="⚙️"
 STATUS_LIST = [
     "🔴 Ocorrência Registrada", 
     "🟡 Em Análise", 
-    "⚙️ Fila de Fabricação/Compra", 
-    "⏳ Aguardando Entrega/Usinagem", 
+    "⚙️ Fila de Fabricação/Compra",  
     "🟢 Validado / Fechado"
 ]
 COLUNAS = [
@@ -340,8 +339,8 @@ with aba1:
 with aba2:
         st.subheader("🗜️ Fila de Produção / Manufatura")
         
-        # Filtra os dados puxando EXATAMENTE o nome do novo status
-        fila_usinagem = df[df["Status"] == "⚙️ Fila de Fabricação/Compra"]
+        # Filtra os dados puxando os DOIS status (o que falta pedir e o que falta chegar)
+        fila_usinagem = df[df["Status"].isin(["⚙️ Fila de Fabricação/Compra", "⏳ Aguardando Entrega/Usinagem"])]
         
         if fila_usinagem.empty:
             st.success("Tudo em dia! Nenhuma peça pendente para fabricação ou compra.")
