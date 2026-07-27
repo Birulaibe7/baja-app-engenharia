@@ -25,6 +25,7 @@ STATUS_LIST = [
     "⚙️ Fila de Fabricação/Compra", 
     "⏳ Aguardando Entrega/Usinagem", 
     "🟢 Validado / Fechado"
+]
 COLUNAS = [
     "ID", "Status", "Data_Ocorrencia", "Componente", "Area", "Responsavel",
     "Contexto", "Piloto", "Atividade", "Sintomas", "Inspecao", "Drive_Link",
