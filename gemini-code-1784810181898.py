@@ -210,7 +210,7 @@ def gerar_word(dados, img_paths):
 # ==========================================
 st.title("⚙️ Central de Engenharia & Oficina - Baja")
 
-aba1, aba2, aba3, aba4 = st.tabs(["📝 Kanban", "🗜️ Fila de Usinagem", "🗂️ Exportar e Relatórios", "📊 Dashboard e Métricas"])
+aba1, aba2, aba3, aba4 = st.tabs(["📝 Kanban", "📦 Fabricação e Compras", "🗂️ Exportar e Relatórios", "📊 Dashboard e Métricas"])
 
 # --- ABA 1: KANBAN E EDIÇÃO CONTÍNUA ---
 with aba1:
